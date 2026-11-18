@@ -33,6 +33,7 @@ final class Plugin
             'client_id' => '',
             'client_secret' => '',
             'mailbox' => '',
+            'from_email' => '',
             'from_name' => '',
         ], is_array($saved) ? $saved : []);
     }
@@ -47,6 +48,10 @@ final class Plugin
         }
         if (! is_email($settings['mailbox']) || preg_match('/[\r\n\x01]/', $settings['mailbox'])) {
             throw new RuntimeException('Enter a valid Microsoft 365 mailbox address.');
+        }
+        $fromEmail = $settings['from_email'] ?? '';
+        if ($fromEmail !== '' && (! is_email($fromEmail) || preg_match('/[\r\n\x01]/', $fromEmail))) {
+            throw new RuntimeException('Enter a valid From Email address, or leave it blank to use the sending mailbox.');
         }
         if ($settings['client_secret'] === '' || Crypto::decrypt($settings['client_secret']) === '') {
             throw new RuntimeException('Enter the client secret Value from Microsoft Entra.');
@@ -73,6 +78,7 @@ final class Plugin
         return [
             'enabled' => $settings['enabled'],
             'mailbox' => $settings['mailbox'],
+            'from_email' => $settings['from_email'],
             'from_name' => $settings['from_name'],
             'credential_masks' => $masks,
         ];
@@ -133,11 +139,12 @@ final class Plugin
         ]];
         $mailer->setOAuth(new TokenProvider($settings));
 
+        $fromEmail = $settings['from_email'] !== '' ? $settings['from_email'] : $settings['mailbox'];
         // Preserve a caller's From as Reply-To only when it supplied no Reply-To.
-        if (strcasecmp($mailer->From, $settings['mailbox']) !== 0 && ! $mailer->getReplyToAddresses()) {
+        if (strcasecmp($mailer->From, $fromEmail) !== 0 && ! $mailer->getReplyToAddresses()) {
             $mailer->addReplyTo($mailer->From, $mailer->FromName);
         }
-        $mailer->From = $settings['mailbox'];
+        $mailer->From = $fromEmail;
         $mailer->FromName = $settings['from_name'] !== '' ? $settings['from_name'] : $mailer->FromName;
         $mailer->Sender = $settings['mailbox'];
     }
@@ -168,6 +175,11 @@ final class Plugin
             $settings['enabled'] = self::input('enabled') === '1';
             foreach (['mailbox', 'from_name'] as $key) {
                 $settings[$key] = sanitize_text_field(self::input($key));
+            }
+            // Validate the original address rather than silently removing invalid characters.
+            $settings['from_email'] = trim(self::input('from_email'));
+            if ($settings['from_email'] !== '' && (! is_email($settings['from_email']) || preg_match('/[\r\n\x01]/', $settings['from_email']))) {
+                throw new RuntimeException('Enter a valid From Email address, or leave it blank to use the sending mailbox.');
             }
             foreach (['tenant_id', 'client_id'] as $key) {
                 $replacement = sanitize_text_field(self::input($key));

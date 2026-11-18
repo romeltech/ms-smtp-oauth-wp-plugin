@@ -2,7 +2,7 @@
 
 /**
  * Real WordPress wp_mail + PHPMailer integration checks, with no live services.
- * Usage: php tests/run.php <extracted WordPress directory>
+ * Usage: php tests/run.php <extracted WordPress directory> [plugin directory]
  */
 use Grandauto\MicrosoftSmtp\Crypto;
 use Grandauto\MicrosoftSmtp\OAuthSmtp;
@@ -14,6 +14,10 @@ set_error_handler(static function ($severity, $message, $file, $line): never {
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 $wp = realpath($argv[1] ?? __DIR__.'/../.test-runtime/wordpress');
+$plugin = realpath($argv[2] ?? __DIR__.'/../gah-microsoft-oauth-smtp');
+if (! $plugin || ! is_file($plugin.'/gah-microsoft-oauth-smtp.php')) {
+    throw new RuntimeException('Pass a valid plugin directory.');
+}
 if (! $wp || ! is_file($wp.'/wp-includes/pluggable.php')) {
     throw new RuntimeException('Pass the path to an extracted WordPress distribution.');
 }
@@ -214,11 +218,13 @@ class WP_Error
 require ABSPATH.WPINC.'/PHPMailer/Exception.php';
 require ABSPATH.WPINC.'/PHPMailer/PHPMailer.php';
 require ABSPATH.WPINC.'/PHPMailer/SMTP.php';
-require ABSPATH.WPINC.'/class-wp-phpmailer.php';
+if (is_file(ABSPATH.WPINC.'/class-wp-phpmailer.php')) {
+    require ABSPATH.WPINC.'/class-wp-phpmailer.php';
+}
 require ABSPATH.WPINC.'/pluggable.php';
 require ABSPATH.WPINC.'/version.php';
-require __DIR__.'/../grandauto-microsoft-smtp/grandauto-microsoft-smtp.php';
-require __DIR__.'/../grandauto-microsoft-smtp/includes/OAuthSmtp.php';
+require $plugin.'/gah-microsoft-oauth-smtp.php';
+require $plugin.'/includes/OAuthSmtp.php';
 
 class FakeSmtp extends OAuthSmtp
 {
@@ -310,7 +316,8 @@ function rejects(callable $operation, string $message): void
 function freshMailer(): FakeSmtp
 {
     $smtp = new FakeSmtp;
-    $GLOBALS['phpmailer'] = new WP_PHPMailer(true);
+    $mailerClass = class_exists('WP_PHPMailer') ? 'WP_PHPMailer' : \PHPMailer\PHPMailer\PHPMailer::class;
+    $GLOBALS['phpmailer'] = new $mailerClass(true);
     $GLOBALS['phpmailer']->setSMTPInstance($smtp);
 
     return $smtp;
@@ -337,6 +344,9 @@ $GLOBALS['salt'] = 'test-only-wordpress-salt';
 rejects(fn () => Plugin::validate(array_replace($settings, ['tenant_id' => '../common'])), 'tenant URL injection is rejected');
 rejects(fn () => Plugin::validate(array_replace($settings, ['client_id' => 'invalid'])), 'invalid client IDs are rejected');
 rejects(fn () => Plugin::validate(array_replace($settings, ['mailbox' => "mail@contoso.com\r\nInjected: value"])), 'mailbox header injection is rejected');
+verify(Plugin::settings()['from_email'] === '', 'older settings default to mailbox-based sending');
+rejects(fn () => Plugin::validate(array_replace($settings, ['from_email' => 'invalid'])), 'invalid From Email is rejected');
+rejects(fn () => Plugin::validate(array_replace($settings, ['from_email' => "sales@contoso.com\r\nBcc: other@example.com"])), 'From Email header injection is rejected');
 
 $smtp = freshMailer();
 $attachment = tempnam(sys_get_temp_dir(), 'gac-smtp-test-');
@@ -357,6 +367,21 @@ verify(! str_contains(serialize($GLOBALS['transients']), 'test-token'), 'cached 
 $smtp = freshMailer();
 verify(wp_mail('recipient@example.com', 'Second', 'Body', ['From: Visitor <visitor@example.com>', 'Reply-To: Help <help@example.com>']), 'second message sends');
 verify(count($GLOBALS['http_calls']) === 1 && in_array('help@example.com', array_column($GLOBALS['phpmailer']->getReplyToAddresses(), 0), true) && count($GLOBALS['phpmailer']->getReplyToAddresses()) === 1, 'cached token reused and explicit Reply-To preserved');
+update_option(Plugin::OPTION, array_replace($settings, ['from_email' => 'sales@contoso.com']));
+$smtp = freshMailer();
+verify(wp_mail('recipient@example.com', 'Custom sender', 'Body', ['From: Visitor <visitor@example.com>']), 'custom From Email sends through WordPress');
+verify(str_contains($smtp->message, 'From: Grandauto <sales@contoso.com>') && in_array('MAIL FROM:<noreply@contoso.com>', $smtp->commands, true), 'visible From Email is separate from the mailbox envelope sender');
+$auth = array_values(array_filter($smtp->commands, fn ($command) => str_starts_with($command, 'AUTH XOAUTH2 ')));
+verify(count($auth) === 1 && base64_decode(substr($auth[0], 13)) === "user=noreply@contoso.com\x01auth=Bearer test-token\x01\x01", 'custom From Email keeps mailbox OAuth authentication');
+verify(in_array('visitor@example.com', array_column($GLOBALS['phpmailer']->getReplyToAddresses(), 0), true), 'custom sender retains caller From as Reply-To');
+$smtp = freshMailer();
+verify(wp_mail('recipient@example.com', 'Custom reply', 'Body', ['From: Sales <sales@contoso.com>', 'Reply-To: Help <help@example.com>']) && count($GLOBALS['phpmailer']->getReplyToAddresses()) === 1 && in_array('help@example.com', array_column($GLOBALS['phpmailer']->getReplyToAddresses(), 0), true), 'custom sender preserves explicit Reply-To');
+$smtp = freshMailer();
+verify(wp_mail('recipient@example.com', 'Matching sender', 'Body', ['From: Sales <sales@contoso.com>']) && ! $GLOBALS['phpmailer']->getReplyToAddresses(), 'matching caller From adds no unnecessary Reply-To');
+update_option(Plugin::OPTION, array_replace($settings, ['from_email' => '']));
+$smtp = freshMailer();
+verify(wp_mail('recipient@example.com', 'Blank sender', 'Body') && str_contains($smtp->message, 'From: Grandauto <noreply@contoso.com>'), 'blank From Email falls back to sending mailbox');
+update_option(Plugin::OPTION, $settings);
 $tokenCache = get_transient(Tokens::CACHE);
 $tokenCache['expires'] = time() + 299;
 set_transient(Tokens::CACHE, $tokenCache, 500);
@@ -404,7 +429,7 @@ rejects(fn () => Plugin::test(), 'invalid nonce cannot send a test');
 Plugin::deactivate();
 verify(get_transient(Tokens::CACHE) === false && get_option(Plugin::OPTION) !== false, 'deactivation clears tokens and retains settings');
 define('WP_UNINSTALL_PLUGIN', true);
-require __DIR__.'/../grandauto-microsoft-smtp/uninstall.php';
+require $plugin.'/uninstall.php';
 verify(get_option(Plugin::OPTION) === false && get_transient(Tokens::CACHE) === false, 'uninstall removes current-site credentials and tokens');
 // save() ends with WordPress's normal redirect + exit. Verify its result on shutdown.
 update_option(Plugin::OPTION, $settings);
@@ -422,6 +447,7 @@ $_POST = [
     'client_id' => '',
     'client_secret' => '',
     'mailbox' => $settings['mailbox'],
+    'from_email' => 'sales@contoso.com',
     'from_name' => '<b>Updated Name</b>',
 ];
 register_shutdown_function(static function () use ($settings, $wp_version): void {
@@ -429,6 +455,7 @@ register_shutdown_function(static function () use ($settings, $wp_version): void
     verify(Crypto::decrypt($saved['client_secret']) === 'test-secret' && $saved['client_secret'] === $settings['client_secret'], 'blank secret on settings save preserves existing encrypted secret');
     verify($saved['tenant_id'] === $settings['tenant_id'] && $saved['client_id'] === $settings['client_id'], 'blank ID fields preserve the saved tenant and client ID');
     verify($saved['from_name'] === 'Updated Name' && $GLOBALS['autoload'][Plugin::OPTION] === false, 'settings sanitized and saved without autoload');
+    verify($saved['from_email'] === 'sales@contoso.com' && $saved['mailbox'] === $settings['mailbox'], 'From Email saves separately from the authentication mailbox');
     verify(get_transient(Tokens::CACHE) === false && str_contains($GLOBALS['redirect'], 'options-general.php?page=gac-microsoft-smtp'), 'settings save invalidates tokens and redirects to settings');
     ob_start();
     Plugin::page();
@@ -439,6 +466,7 @@ register_shutdown_function(static function () use ($settings, $wp_version): void
         verify(str_contains($html, 'Saved: •••••'.substr($value, -5).'.'), 'only the last five characters are shown for '.$key);
     }
     verify(str_contains($html, '<h1>GAH Microsoft OAuth SMTP</h1>'), 'settings use GAH company branding');
+    verify(str_contains($html, 'name="from_email" type="email" value="sales@contoso.com"') && str_contains($html, 'Send As permission'), 'settings render the saved From Email and permission guidance');
     verify(str_contains($html, 'gac_ms_smtp_save') && str_contains($html, 'gac_ms_smtp_test') && str_contains($html, 'Settings saved.'), 'admin settings and test forms render with save result');
     echo "\n".$GLOBALS['checks']." checks passed against WordPress $wp_version, PHP ".PHP_VERSION.". No external mail sent.\n";
 });

@@ -27,10 +27,15 @@ if (! defined('ABSPATH')) {
                     </td>
                 </tr>
             <?php } ?>
-            <?php foreach (['mailbox' => 'Sending mailbox', 'from_name' => 'From name (optional)'] as $key => $label) { ?>
+            <?php foreach (['mailbox' => 'Sending mailbox', 'from_email' => 'From Email (optional)', 'from_name' => 'From name (optional)'] as $key => $label) { ?>
                 <tr>
                     <th scope="row"><label for="gac-<?php echo esc_attr($key); ?>"><?php echo esc_html($label); ?></label></th>
-                    <td><input class="regular-text" id="gac-<?php echo esc_attr($key); ?>" name="<?php echo esc_attr($key); ?>" type="<?php echo $key === 'mailbox' ? 'email' : 'text'; ?>" value="<?php echo esc_attr($settings[$key]); ?>" maxlength="255"></td>
+                    <td>
+                        <input class="regular-text" id="gac-<?php echo esc_attr($key); ?>" name="<?php echo esc_attr($key); ?>" type="<?php echo in_array($key, ['mailbox', 'from_email'], true) ? 'email' : 'text'; ?>" value="<?php echo esc_attr($settings[$key]); ?>" maxlength="255">
+                        <?php if ($key === 'from_email') { ?>
+                            <p class="description">Address recipients see as the sender. Leave blank to use the sending mailbox. Microsoft 365 must authorize sending as this address; a different mailbox requires Send As permission.</p>
+                        <?php } ?>
+                    </td>
                 </tr>
             <?php } ?>
             <tr>
@@ -41,7 +46,7 @@ if (! defined('ABSPATH')) {
                 </td>
             </tr>
         </table>
-        <p>Server: <code>smtp.office365.com:587</code>, required STARTTLS and XOAUTH2. From and envelope sender are locked to the mailbox. An existing Reply-To is preserved.</p>
+        <p>Server: <code>smtp.office365.com:587</code>, required STARTTLS and XOAUTH2. Authentication and envelope sender use the sending mailbox. The visible sender uses From Email, or the mailbox when blank. An existing Reply-To is preserved.</p>
         <?php submit_button('Save settings'); ?>
     </form>
     <hr>

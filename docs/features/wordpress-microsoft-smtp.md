@@ -4,10 +4,10 @@ The maintainer requested and approved a separate WordPress version of Grandauto'
 Microsoft 365 app-only OAuth SMTP implementation on 2026-11-18.
 
 - Project root: `C:\dev\WP-plugins\gah-microsoft-oauth-smtp`.
-- Source: `grandauto-microsoft-smtp/`.
+- Source: `gah-microsoft-oauth-smtp/`.
 - Installable package: `dist/gah-microsoft-oauth-smtp.zip`.
 - Separate installation/setup/behavior guide:
-  [MICROSOFT-SMTP.md](../../grandauto-microsoft-smtp/MICROSOFT-SMTP.md).
+  [MICROSOFT-SMTP.md](../../gah-microsoft-oauth-smtp/MICROSOFT-SMTP.md).
 - Decision: [SITE-002](../decisions/SITE-002-wordpress-microsoft-smtp.md).
 
 It reuses ADR-043's client-credentials Exchange Online scope and XOAUTH2 approach,
@@ -26,11 +26,16 @@ Microsoft requires the original secret. Tenant/client IDs are non-secret identif
 and remain in the settings option as before. Internal folder/option names are
 retained for compatibility. The new ZIP replaces the earlier archive.
 
+Version 1.0.2 adds optional From Email for the visible sender. Sending mailbox
+continues to control OAuth authentication and the envelope sender. Blank From
+Email retains the previous mailbox-based behavior; Exchange must authorize the
+selected sender address. Existing Reply-To handling is preserved.
+
 The maintainer requested moving all plugin work out of Grandauto into the separate
 project above. Source, package, guide, tests, development WordPress copy and these
 notes live there. Grandauto's working tree is restored to its pre-plugin state.
 
-Verification on 2026-11-18: 51 local checks passed using WordPress 7.1.4's real
+Verification on 2026-11-18: 63 local checks passed using WordPress 7.1.4's real
 `wp_mail()` and bundled PHPMailer, fake HTTP/SMTP and WordPress service stubs on
 PHP 8.4.27. Checks include encryption/tampering, credential validation, token
 request/caching/renewal, TLS refusal, XOAUTH2-only authentication, sender/Reply-To,

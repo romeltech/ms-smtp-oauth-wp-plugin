@@ -3,12 +3,12 @@
 /**
  * Plugin Name: GAH Microsoft OAuth SMTP
  * Description: Send WordPress mail through Microsoft 365 SMTP using app-only OAuth and XOAUTH2.
- * Version: 1.0.1
+ * Version: 1.0.2
  * Requires at least: 6.5
  * Requires PHP: 8.1
- * Author: GAH
+ * Author: Romel Indemne
  * License: GPL-2.0-or-later
- * Text Domain: grandauto-microsoft-smtp
+ * Text Domain: gah-microsoft-oauth-smtp
  */
 
 namespace Grandauto\MicrosoftSmtp;

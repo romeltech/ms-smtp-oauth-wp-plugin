@@ -13,7 +13,7 @@ renewal, test email and installable ZIP scope. A separate Markdown guide was req
 ## Decision
 
 Keep a standalone plugin project at `C:\dev\WP-plugins\gah-microsoft-oauth-smtp`,
-with source under `grandauto-microsoft-smtp/`. Use WordPress
+with source under `gah-microsoft-oauth-smtp/`. Use WordPress
 APIs and its bundled PHPMailer without adding runtime dependencies. Follow builder
 ADR-043's Microsoft commercial-cloud client-credentials grant and Exchange scope;
 authenticate to smtp.office365.com using XOAUTH2 with verified, required STARTTLS.
@@ -21,8 +21,11 @@ This is not a change to Laravel authentication or its mail transport.
 
 Store per-site settings in a non-autoloaded WordPress option. Encrypt the client
 secret and transient token with AES-256-GCM using a WordPress-auth-salt-derived key.
-Require manage_options and an action nonce for settings and test sends. Lock the
-sender to the mailbox; retain caller Reply-To behavior. Preserve settings on
+Require manage_options and an action nonce for settings and test sends. Use the
+mailbox for authentication and the envelope sender; allow an optional From Email
+for the visible sender, with the mailbox as the default. The maintainer approved
+this separate sender setting on 2026-11-18. Exchange must authorize sending as
+the selected address. Retain caller Reply-To behavior. Preserve settings on
 deactivation and remove current-site configuration on WordPress uninstall.
 
 ## Consequences

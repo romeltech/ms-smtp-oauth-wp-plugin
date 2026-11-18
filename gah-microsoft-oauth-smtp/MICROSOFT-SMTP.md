@@ -1,6 +1,6 @@
 # GAH Microsoft OAuth SMTP for WordPress
 
-Version 1.0.1. A standalone plugin for GAH based on Grandauto's `MicrosoftTokenService`
+Version 1.0.2. A standalone plugin for GAH based on Grandauto's `MicrosoftTokenService`
 and `MicrosoftOAuthTransport` (builder ADR-043). It does not need Laravel,
 Composer, a Microsoft SDK, an OAuth redirect URL or an interactive login.
 
@@ -21,7 +21,7 @@ Composer, a Microsoft SDK, an OAuth redirect URL or an interactive login.
 3. Disable other SMTP/mail transport plugins to avoid competing hooks.
 4. Open **Settings → GAH Microsoft OAuth SMTP**.
 5. Enter your tenant ID (or tenant domain), application/client ID, client secret
-   **Value**, sending mailbox and optional From name.
+   **Value**, sending mailbox, optional From Email and optional From name.
 6. Enable Microsoft SMTP, save settings, then send a test email to an inbox you own.
 7. Verify receipt, then exercise a real password reset and a form from your site.
 
@@ -85,7 +85,14 @@ The plugin itself makes outbound calls only when sending email or its explicit t
   port **587**, required **STARTTLS**, TLS 1.2 or later and certificate verification.
 - Applies to mail sent through `wp_mail()`: core notifications, password resets
   and plugins that use that function. Plugins sending via their own APIs bypass it.
-- Locks From and envelope sender to the configured mailbox. A caller's different
+- Uses the sending mailbox for authentication and the envelope sender. The visible
+  From address uses the optional From Email setting, falling back to the mailbox
+  when blank. Existing installations keep their mailbox-based sender until changed.
+  Microsoft 365 must authorize sending as the From Email address. For a different
+  sender mailbox, grant the application's Exchange service principal SendAs on
+  that sender using `Add-RecipientPermission` as described in the Microsoft setup
+  reference above; the plugin does not grant permissions. An unauthorized address
+  can be rejected by Exchange with SendAsDenied. A caller's different
   From address becomes Reply-To if no Reply-To was supplied. Existing Reply-To,
   recipients, CC/BCC, attachments and message content are retained.
 - From name is configurable; when blank, the caller's From name is retained.
@@ -138,7 +145,7 @@ Remove each site's saved configuration before deleting from a multisite network.
 ## Development and verification
 
 Project root: `C:\dev\WP-plugins\gah-microsoft-oauth-smtp`. Plugin source:
-`grandauto-microsoft-smtp/`. The ZIP contains only this
+`gah-microsoft-oauth-smtp/`. The ZIP contains only this
 folder, including this guide; no application secrets or Laravel dependencies.
 
 Local verification uses WordPress core's actual `wp_mail()` and bundled PHPMailer,
@@ -152,7 +159,7 @@ php build.php
 Run these commands from the project root. Download/extract WordPress separately
 into `.test-runtime/wordpress` before running the checks. The local copy used
 during development moved with this project; it is not included in the plugin ZIP.
-The 51 checks passed on 2026-11-18 using WordPress 7.1.4 and PHP 8.4.27. The checks
+The 63 checks passed on 2026-11-18 using WordPress 7.1.4 and PHP 8.4.27. The checks
 never contact Microsoft or deliver email. Real WordPress admin/browser
 behavior and end-to-end delivery still require a target WordPress site and an
 authorized Microsoft 365 tenant; no live tenant credentials are bundled.
